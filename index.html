@@ -1,0 +1,303 @@
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="preconnect" href="https://fonts.gstatic.com">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-BmbxuPwQa2lc/FVzBcNJ7UAyJxM6wuqIj61tLrc4wSX0szH/Ev+nYRRuWlolflfl" crossorigin="anonymous">
+        <title>Entities Viewer</title>
+        <link href="css/styles.css" rel="stylesheet">
+        <link href="css/diagramer.css" rel="stylesheet">
+        <link rel="icon" href="favicon.png">
+    </head>
+    <body>
+        <div class="container-fluid d-flex min-vh-100 flex-column p-0">
+            <h1 class="text-center text-white">Entity Viewer</h1>
+            <div class="mx-auto position-relative">
+                <form id="query-form" method="post" class="mb-2">
+                    <div class="input-group">
+                        <select name="language" class="form-select">
+                            <option value="EN">EN</option>
+                            <option value="ES">ES</option>
+                            <option value="LA">LA</option>
+                          </select>
+                        <input name="query" autocomplete="off" autofocus type="text" class="form-control w-50">
+                    </div>
+                </form>
+                <div id="query-results" class="container position-absolute">
+                
+                </div>
+            </div>
+            <div id="diagram" style="min-height: 100vh;position: relative;">
+
+            </div>
+        </div>
+        <script type="text/template" id="tpl-search-result">
+            <div class="search-result bg-dark p-2 text-white row mx-auto">
+                <% if (entity.preview && entity.preview.image) { %>
+                <div class="col-4 my-auto position-relative px-0">
+                    <img class="w-100" src="<%=entity.preview.image%>">
+                    <a data-wikipedia-link href="#" target="_blank" title="View on Wikipedia">
+                        <img class="wikipedia-icon" src="/img/wikipedia.ico">
+                    </a>
+                </div>
+                <% } %>
+                <div class="col-<% if (entity.preview && entity.preview.image) { %>8<% } else { %>12<% } %>">
+                    <h5 class="mb-0"><%=entity.name%></h5>
+                    <p class="mb-0">
+                        Type: <a data-action="load-parent" data-parent href="#"><%=entity.type%></a>
+                        <% if (entity.family) { %> - <a data-action="load-parent" data-family href="#"><%=entity.family%></a><% } %>
+                    </p>
+                    <% if (entity.description) { %>
+                    <p class="text-truncate"><%=entity.description%></p>
+                    <% } %>
+                    <% if (entity.attributeList) { %>
+                        <ul class="attributes-list">
+                        <% entity.attributeList.forEach((attribute) => { %>
+                            <li><%= attribute.name %>: <%= attribute.val %></li>
+                        <% }) %>
+                        </ul>
+                    <% } %>
+                </div>
+            </div>
+        </script>
+        <script type="text/template" id="tpl-node">
+            <div class="diagramer-node">
+            </div>
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/underscore@1.11.0/underscore-min.js"></script>
+        <script>
+            Object.defineProperty(String.prototype, 'capitalize', {
+                value: function() {
+                    return this.charAt(0).toUpperCase() + this.slice(1);
+                },
+                enumerable: false
+            });
+
+            class EntitiesViewer {
+                constructor () {
+                    this.diagramer = new Diagramer(document.getElementById('diagram'));
+                    this.currentLanguage = null;
+
+                    this.$resultsContainer = document.getElementById('query-results');
+
+                    this.getDB();
+                    this.setupListeners();
+                }
+
+                getDB () {
+                    fetch('db.json')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.db = data;
+                    });
+                }
+
+                setupListeners () {
+                    const $form = document.getElementById('query-form');
+                    $form.addEventListener("submit", (e) => {
+                        e.preventDefault();
+                        const query = $form.querySelector('[name="query"]').value;
+                        const language = $form.querySelector('[name="language"]').value;
+
+                        if (query.length > 0) {
+                            this.search(query, language);
+                        }
+                    });
+                }
+
+                async search (query, language) {
+                    const queryLowerCase = query.toLowerCase();
+                    await this.prepareLanguage(language);
+
+                    this.$resultsContainer.innerHTML = "";
+
+                    this.parsedDB.forEach(entry => {
+                        if (entry.name.toLowerCase().includes(queryLowerCase)) {
+                            this.$resultsContainer.appendChild(this.buildSearchResult(this.db[entry.id], language));
+                        }
+                    });
+                }
+
+                parseEntity (originalEntity, language) {
+                    const entity = JSON.parse(JSON.stringify(originalEntity)); // clone entity
+
+                    entity.parent = typeof entity.type !== "undefined" ? this.db[entity.type] : null;
+
+                    if (typeof entity.name[language] !== "undefined") {
+                        entity.name = entity.name[language];
+                    } else {
+                        entity.name = entity.name.EN;
+                    }
+
+                    if (entity.description && typeof entity.description[language] !== "undefined") {
+                        entity.description = entity.description[language];
+                    } else if (entity.description) {
+                        entity.description = entity.description.EN;
+                    } else {
+                        entity.description = "";
+                    }
+
+                    if (entity.parent && entity.parent.attributes) {
+                        entity.attributeList = [];
+                        Object.keys(entity.parent.attributes).forEach(k => {
+                            const val = entity.parent.attributes[k];
+                            const fieldName = this.beautifulName(k);
+
+                            if (typeof entity[k] === "undefined") {
+                                reeturn;
+                            }
+
+                            if (Array.isArray(val)) {
+
+                            } else if (typeof val === "object") {
+
+                                if (typeof val.required !== 'undefined' && typeof val.type !== 'undefined') {
+                                    // is entity
+                                    if (val.type === "entity" || val.type.substr(0, 1) === val.type.substr(0, 1).toUpperCase()) {
+                                        entity.attributeList.push({
+                                            name: fieldName,
+                                            val: '<a data-load-relation href="#">' + entity[k] + '</a>'
+                                        });
+                                        return;
+                                    }
+                                } else {
+                                    let html = '<ul>';
+                                    Object.keys(val).forEach(subKey => {
+                                        html += '<li>' + this.beautifulName(subKey) + ': ' + entity[k][subKey] + '</li>';
+                                    });
+                                    html += '</ul>';
+                                    entity.attributeList.push({
+                                        name: fieldName,
+                                        val: html
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    return entity;
+                }
+
+                startDiagramWith (parsedEntity) {
+                    this.diagramer.reset();
+                    this.diagramer.paint(parsedEntity);
+                    this.$resultsContainer.innerHTML = "";
+
+                }
+
+                beautifulName (str) {
+                    return str.replace("_", " ").capitalize();
+                }
+
+                buildSearchResult (entity, language) {
+                    const parsedEntity = this.parseEntity(entity);
+                    const template = this.diagramer.parseTemplate('search-result', {
+                        entity: parsedEntity,
+                        language: language,
+                    });
+
+                    template.addEventListener("click", () => {
+                        this.startDiagramWith(parsedEntity);
+                    });
+
+                    return template;
+                }
+
+                async prepareLanguage (language) {
+                    return new Promise((resolve, reject) => {
+                        if (language === this.currentLanguage) {
+                            resolve();
+                            return;
+                        }
+                        this.parsedDB = [];
+
+                        Object.keys(this.db).forEach(k => {
+                            const entity = this.db[k];
+
+                            if (typeof entity.name[language] !== "undefined") {
+                                this.parsedDB.push({
+                                    id: k,
+                                    name: entity.name[language],
+                                });
+                            } else {
+                                this.parsedDB.push({
+                                    id: k,
+                                    name: k,
+                                });
+                            }
+                        });
+                        resolve();
+                    });
+                }
+            }
+
+            class Diagramer {
+                constructor ($container) { 
+                    this.$container = $container;
+                    this.moveOffset = [0, 0];
+                    this.movedNode = null;
+                    this.setupListeners();
+                }
+
+                isMovingANode () {
+                    return this.movedNode !== null;
+                }
+
+                setupListeners () {
+                    document.addEventListener('mouseup', () => {
+                        this.movedNode = null;
+                    }, true);
+
+                    document.addEventListener('mousemove', (e) => {
+                        event.preventDefault();
+                        if (this.isMovingANode()) {
+                            this.movedNode.style.left = (e.clientX + this.moveOffset[0]) + 'px';
+                            this.movedNode.style.top  = (e.clientY + this.moveOffset[1]) + 'px';
+                        }
+                    }, true);
+                }
+
+                reset () {
+                    this.$container.innerHTML = "";
+                }
+
+                paint (entity) {
+                    const template = this.parseTemplate('search-result', {
+                        entity: entity,
+                    });
+                    template.classList.add("node");
+                    template.setAttribute("draggable", true);
+
+                    template.addEventListener('mousedown', (e) => {
+                        this.movedNode = template;
+                        this.moveOffset = [
+                            template.offsetLeft - e.clientX,
+                            template.offsetTop - e.clientY
+                        ];
+                    }, true);
+
+                    this.$container.appendChild(template);
+                }
+
+                getTemplate(name) {
+                    return document.getElementById("tpl-" + name).innerHTML.trim();
+                }
+
+                parseTemplate(name, data) {
+                    let parsedTemplate = _.template(this.getTemplate(name))(data);
+                    return this.stringToDOM(parsedTemplate);
+                }
+                
+                stringToDOM (str) {
+                    let div = document.createElement('div');
+                    div.innerHTML = str;
+                    
+                    return div.firstChild; 
+                }
+            }
+
+            const entitiesViewer = new EntitiesViewer();
+        </script>
+    </body>
+</html>
