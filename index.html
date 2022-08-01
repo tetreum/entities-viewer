@@ -46,8 +46,8 @@
                 <div class="col-<% if (entity.preview && entity.preview.image) { %>8<% } else { %>12<% } %>">
                     <h5 class="mb-0"><%=entity.name%></h5>
                     <p class="mb-0">
-                        Type: <a data-action="load-parent" data-parent href="#"><%=entity.type%></a>
-                        <% if (entity.family) { %> - <a data-action="load-parent" data-family href="#"><%=entity.family%></a><% } %>
+                        Type: <a data-load-parent href="#"><%=entity.type%></a>
+                        <% if (entity.family) { %> - <a data-load-parent href="#"><%=entity.family%></a><% } %>
                     </p>
                     <% if (entity.description) { %>
                     <p class="text-truncate"><%=entity.description%></p>
@@ -120,10 +120,8 @@
                     });
                 }
 
-                parseEntity (originalEntity, language) {
+                getEntityForLanguage (originalEntity, language) {
                     const entity = JSON.parse(JSON.stringify(originalEntity)); // clone entity
-
-                    entity.parent = typeof entity.type !== "undefined" ? this.db[entity.type] : null;
 
                     if (typeof entity.name[language] !== "undefined") {
                         entity.name = entity.name[language];
@@ -138,6 +136,14 @@
                     } else {
                         entity.description = "";
                     }
+
+                    return entity;
+                }
+
+                parseEntity (originalEntity, language) {
+                    const entity = this.getEntityForLanguage(originalEntity, language);
+
+                    entity.parent = typeof entity.type !== "undefined" ? this.db[entity.type] : null;
 
                     if (entity.parent && entity.parent.attributes) {
                         entity.attributeList = [];
@@ -155,10 +161,12 @@
 
                                 if (typeof val.required !== 'undefined' && typeof val.type !== 'undefined') {
                                     // is entity
-                                    if (val.type === "entity" || val.type.substr(0, 1) === val.type.substr(0, 1).toUpperCase()) {
+                                    if (this.isEntity(val.type)) {
+                                        const relatedEntity = this.getEntityForLanguage(this.db[entity[k]], language);
+                                        console.log(this.db[entity[k]], relatedEntity, language);
                                         entity.attributeList.push({
                                             name: fieldName,
-                                            val: '<a data-load-relation href="#">' + entity[k] + '</a>'
+                                            val: '<a data-load-relation href="#">' + relatedEntity.name + '</a>'
                                         });
                                         return;
                                     }
@@ -179,6 +187,10 @@
                     return entity;
                 }
 
+                isEntity (entry) {
+                    return entry === "entity" || entry.substr(0, 1) === entry.substr(0, 1).toUpperCase();
+                }
+
                 startDiagramWith (parsedEntity) {
                     this.diagramer.reset();
                     this.diagramer.paint(parsedEntity);
@@ -191,7 +203,7 @@
                 }
 
                 buildSearchResult (entity, language) {
-                    const parsedEntity = this.parseEntity(entity);
+                    const parsedEntity = this.parseEntity(entity, language);
                     const template = this.diagramer.parseTemplate('search-result', {
                         entity: parsedEntity,
                         language: language,
@@ -214,18 +226,20 @@
 
                         Object.keys(this.db).forEach(k => {
                             const entity = this.db[k];
+                            let name;
 
                             if (typeof entity.name[language] !== "undefined") {
-                                this.parsedDB.push({
-                                    id: k,
-                                    name: entity.name[language],
-                                });
+                                name = entity.name[language];
+                            } else if (typeof entity.name.EN !== "undefined") {
+                                name = entity.name.EN;
                             } else {
-                                this.parsedDB.push({
-                                    id: k,
-                                    name: k,
-                                });
+                                name = k;
                             }
+
+                            this.parsedDB.push({
+                                id: k,
+                                name: name,
+                            });
                         });
                         resolve();
                     });
@@ -276,6 +290,12 @@
                             template.offsetTop - e.clientY
                         ];
                     }, true);
+
+                    template.querySelectorAll('[data-load-parent]').forEach(el => {
+                        el.addEventListener("click", () => {
+                            this.paint(el.dataset.loadParent);
+                        });
+                    });
 
                     this.$container.appendChild(template);
                 }
